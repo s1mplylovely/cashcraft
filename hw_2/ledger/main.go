@@ -8,22 +8,27 @@ import (
 	"io"
 	"os"
 	"slices"
+	"time"
 )
 
 var budgetsFile = "budgets.json"
 
+type Validatable interface {
+	Validate() error
+}
+
 type Transaction struct {
-	ID          int
-	Amount      float64
-	Category    string
+	ID int
+	Amount float64
+	Category string
 	Description string
-	Date        string
+	Date string
 }
 
 type Budget struct {
 	Category string
-	Limit    float64
-	Period   string // "месяц"/"год"
+	Limit float64
+	Period string // "месяц"/"год"
 }
 
 var transactions []Transaction
@@ -38,9 +43,44 @@ var budgets = map[string][]Budget{
 	},
 }
 
-var ErrZeroAmount = errors.New("сумма транзакции не может быть 0")
-var ErrNegativeLimit = errors.New("бюджет не моет быть отрицательным")
-var ErrBudgetExceeded = errors.New("бюджет превышен")
+var (
+	ErrZeroAmount = errors.New("сумма транзакции не может быть 0")
+	ErrNegativeAmount = errors.New("сумма транзакции не может быть отрицательной")
+	ErrEmptyCategory = errors.New("категория не может быть пустой")
+	ErrInvalidDate = errors.New("некорректный формат даты, ожидается YYYY-MM-DD")
+	ErrNotPositiveLimit = errors.New("лимит бюджета должен быть положительным числом")
+	ErrBudgetExceeded = errors.New("бюджет превышен")
+)
+
+func (tx Transaction) Validate() error {
+	if tx.Amount == 0 {
+		return ErrZeroAmount
+	}
+	if tx.Amount < 0 {
+		return fmt.Errorf("%w: %.2f", ErrNegativeAmount, tx.Amount)
+	}
+	if tx.Category == "" {
+		return ErrEmptyCategory
+	}
+	if _, err := time.Parse("2006-01-02", tx.Date); err != nil {
+		return fmt.Errorf("%w: %q", ErrInvalidDate, tx.Date)
+	}
+	return nil
+}
+
+func (b Budget) Validate() error {
+	if b.Category == "" {
+		return ErrEmptyCategory
+	}
+	if b.Limit <= 0 {
+		return fmt.Errorf("%w: %.2f", ErrNotPositiveLimit, b.Limit)
+	}
+	return nil
+}
+
+func CheckValid(v Validatable) error {
+	return v.Validate()
+}
 
 // сумма добавленных транзакций по категории
 func currentSumByCategory(category string) float64 {
@@ -73,8 +113,8 @@ func checkBudget(tx Transaction) error {
 }
 
 func AddTransaction(tx Transaction) error {
-	if tx.Amount == 0 {
-		return ErrZeroAmount
+	if err := tx.Validate(); err != nil {
+		return err
 	}
 
 	if err := checkBudget(tx); err != nil {
@@ -100,8 +140,8 @@ func removeByPeriod(categoryBudgets []Budget, period string) []Budget {
 
 // добавляет бюджет
 func SetBudget(b Budget) error {
-	if b.Limit < 0 {
-		return ErrNegativeLimit
+	if err := b.Validate(); err != nil {
+		return err
 	}
 
 	categoryBudgets := budgets[b.Category]
@@ -163,6 +203,10 @@ func main() {
 		{Category: "транспорт", Limit: -20, Period: "месяц"},
 		// новый бюджет
 		{Category: "развлечения", Limit: 5000, Period: "месяц"},
+		// ошибка - нулевой бюджет
+		{Category: "еда", Limit: 0, Period: "месяц"}, 
+		// ошибка - пустая категория
+		{Category: "", Limit: 1000, Period: "месяц"},
 	}
 
 	fmt.Printf("Добавление бюджетов из main...\n")
@@ -198,6 +242,12 @@ func main() {
 		{Amount: 100000.00, Category: "другое", Description: "Телефон", Date: "2026-09-23"},
 		// ошибка - нулевая сумма
 		{Amount: 0.00, Category: "развлечения", Description: "Боулинг", Date: "2026-09-24"},
+		// ошибка - отрицательная сумма
+		{Amount: -5, Category: "еда", Description: "Тест", Date: "2026-09-25"},
+		// ошибка - пустая категория
+		{Amount: 100, Category: "", Description: "Тест", Date: "2026-09-26"},
+		// ошибка - некорректная дата
+		{Amount: 100, Category: "еда", Description: "Тест", Date: "27.09.2026"},	
 	}
 
 	for _, tx := range txData {
