@@ -92,3 +92,38 @@ curl -i -X POST localhost:8080/api/budgets \
 ```bash
 curl -s localhost:8080/api/budgets
 ```
+
+## Тесты
+
+- `ledger/domain/domain_test.go` - unit-тесты домена `Transaction.Validate()`, `Budget.Validate()`, правило бюджета в `AddTransaction()`/`ListTransactions()`
+
+- `gateway/internal/api/handlers_test.go` - интеграционные HTTP-тесты для `POST/GET /api/budgets` и `POST/GET /api/transactions` (через `httptest`)
+
+## Инструкция по запуску тестов
+
+```bash
+cd app
+
+# все тесты
+go test ./ledger/... ./gateway/...
+
+# подробный вывод
+go test -v ./ledger/... ./gateway/...
+
+# запустить тесты и сформировать покрытие
+go test ./ledger/... ./gateway/... -cover -coverprofile=cover.out
+go tool cover -html=cover.out -o cover.html
+```
+
+Ожидаемый вывод:
+
+```
+ok  	ledger/domain
+ok  	gateway/internal/api
+```
+
+## Покрытие тестами
+
+- unit-тесты (`ledger/domain/domain_test.go`) ~58.3%
+
+- интеграционные тесты (`gateway/internal/api/handlers_test.go`) ~83.3%
