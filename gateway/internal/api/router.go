@@ -1,14 +1,21 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
 
-func NewRouter() http.Handler {
+	"ledger"
+)
+
+// собирает маршрутизатор поверх прикладного сервиса; обработчики
+// получают сервис через конструктор NewHandlers
+func NewRouter(svc ledger.Service) http.Handler {
+	h := NewHandlers(svc)
+
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("/ping", pingHandler)
-	mux.HandleFunc("/api/transactions", transactionsRoute)
-	mux.HandleFunc("/api/budgets", budgetsRoute)
-	mux.HandleFunc("/api/reports/summary", reportsSummaryRoute)
+	mux.HandleFunc("/api/transactions", h.transactionsRoute)
+	mux.HandleFunc("/api/budgets", h.budgetsRoute)
+	mux.HandleFunc("/api/reports/summary", h.reportsSummaryRoute)
 
 	return LoggingMiddleware(mux)
 }
@@ -18,36 +25,35 @@ func pingHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
 		return
 	}
-	
 	writeJSON(w, http.StatusOK, map[string]string{"status": "pong"})
 }
 
-func transactionsRoute(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) transactionsRoute(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		listTransactions(w, r)
+		h.listTransactions(w, r)
 	case http.MethodPost:
-		createTransaction(w, r)
+		h.createTransaction(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
 	}
 }
 
-func budgetsRoute(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) budgetsRoute(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		listBudgets(w, r)
+		h.listBudgets(w, r)
 	case http.MethodPost:
-		createBudget(w, r)
+		h.createBudget(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
 	}
 }
 
-func reportsSummaryRoute(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) reportsSummaryRoute(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		reportSummary(w, r)
+		h.reportSummary(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
 	}

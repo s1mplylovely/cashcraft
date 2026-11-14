@@ -86,7 +86,7 @@ export REDIS_DB=0
 
 ```bash
 cd cashcraft
-go run ./ledger
+go run ./ledger/cmd/ledger
 go run ./gateway
 ```
 
@@ -198,9 +198,10 @@ Ledger: отчет report:summary:2026-09-01:2026-09-30 — cache hit
 
 ## Тесты
 
-- `ledger/domain/domain_test.go` - unit-тесты домена `Transaction.Validate()`, `Budget.Validate()`, правило бюджета в `AddTransaction()`/`ListTransactions()`
-
-- `gateway/internal/api/handlers_test.go` - интеграционные HTTP-тесты для `POST/GET /api/budgets` и `POST/GET /api/transactions` (через `httptest`)
+- `ledger/internal/domain/entity_test.go` - валидация сущностей (`Transaction.Validate()`, `Budget.Validate()`)
+- `ledger/internal/service/service_test.go` - бизнес-правило бюджета и отчет на фейковых репозиториях (in-memory)
+- `ledger/internal/repository/pg/pg_test.go` - репозитории на реальном PostgreSQL
+- `gateway/internal/api/handlers_test.go` - HTTP-контракт через фейковый `ledger.Service` (`httptest`)
 
 Юнит-тесты валидации работают без инфраструктуры.
 Тесты, которым нужна БД, автоматически пропускаются, если PostgreSQL недоступен.
@@ -224,12 +225,15 @@ go tool cover -html=cover.out -o cover.html
 Ожидаемый вывод:
 
 ```
-ok  	ledger/domain
-ok  	gateway/internal/api
+ok      ledger/internal/domain
+ok      ledger/internal/repository/pg
+ok      ledger/internal/service
+ok      gateway/internal/api
 ```
 
 ## Покрытие тестами
 
-- unit-тесты (`ledger/domain/domain_test.go`) ~38.0%
-
-- интеграционные тесты (`gateway/internal/api/handlers_test.go`) ~77.9%
+- `ledger/internal/domain/entity_test.go` - 47,1%
+- `ledger/internal/service/service_test.go` - 64,3%
+- `ledger/internal/repository/pg/pg_test.go` - 83,6%
+- `gateway/internal/api/handlers_test.go` - 77,7%

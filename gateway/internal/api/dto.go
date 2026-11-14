@@ -1,6 +1,6 @@
 package api
 
-import "ledger/domain"
+import "ledger"
 
 type CreateTransactionRequest struct {
 	Amount float64
@@ -9,8 +9,8 @@ type CreateTransactionRequest struct {
 	Date string
 }
 
-func (r CreateTransactionRequest) ToDomain() domain.Transaction {
-	return domain.Transaction{
+func (r CreateTransactionRequest) ToDomain() ledger.Transaction {
+	return ledger.Transaction{
 		Amount: r.Amount,
 		Category: r.Category,
 		Description: r.Description,
@@ -26,7 +26,7 @@ type TransactionResponse struct {
 	Date string
 }
 
-func NewTransactionResponse(tx domain.Transaction) TransactionResponse {
+func NewTransactionResponse(tx ledger.Transaction) TransactionResponse {
 	return TransactionResponse{
 		ID: tx.ID,
 		Amount: tx.Amount,
@@ -42,8 +42,8 @@ type CreateBudgetRequest struct {
 	Period string
 }
 
-func (r CreateBudgetRequest) ToDomain() domain.Budget {
-	return domain.Budget{
+func (r CreateBudgetRequest) ToDomain() ledger.Budget {
+	return ledger.Budget{
 		Category: r.Category,
 		Limit: r.Limit,
 		Period: r.Period,
@@ -56,7 +56,7 @@ type BudgetResponse struct {
 	Period string
 }
 
-func NewBudgetResponse(b domain.Budget) BudgetResponse {
+func NewBudgetResponse(b ledger.Budget) BudgetResponse {
 	return BudgetResponse{
 		Category: b.Category,
 		Limit: b.Limit,
