@@ -3,8 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"net/http"
 	"ledger/domain"
+	"net/http"
+	"time"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -33,7 +34,8 @@ func createTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := domain.AddTransaction(tx); err != nil {
+	// проверяет лимит бюджета и записывает id в tx.ID
+	if err := domain.AddTransaction(&tx); err != nil {
 		if errors.Is(err, domain.ErrBudgetExceeded) {
 			writeError(w, http.StatusConflict, "бюджет превышен")
 			return
@@ -42,14 +44,15 @@ func createTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list := domain.ListTransactions()
-	created := list[len(list)-1]
-
-	writeJSON(w, http.StatusCreated, NewTransactionResponse(created))
+	writeJSON(w, http.StatusCreated, NewTransactionResponse(tx))
 }
 
 func listTransactions(w http.ResponseWriter, r *http.Request) {
-	list := domain.ListTransactions()
+	list, err := domain.ListTransactions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
 	resp := make([]TransactionResponse, 0, len(list))
 	for _, tx := range list {
 		resp = append(resp, NewTransactionResponse(tx))
@@ -80,10 +83,40 @@ func createBudget(w http.ResponseWriter, r *http.Request) {
 }
 
 func listBudgets(w http.ResponseWriter, r *http.Request) {
-	list := domain.ListBudgets()
+	list, err := domain.ListBudgets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
 	resp := make([]BudgetResponse, 0, len(list))
 	for _, b := range list {
 		resp = append(resp, NewBudgetResponse(b))
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// Отдает агрегированный отчет за интервал [from, to].
+// Параметры from/to — в query, формат YYYY-MM-DD, по умолчанию берется
+// текущий месяц
+func reportSummary(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	from := r.URL.Query().Get("from")
+	if from == "" {
+		from = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	}
+	to := r.URL.Query().Get("to")
+	if to == "" {
+		to = now.Format("2006-01-02")
+	}
+
+	summary, err := domain.GetReportSummary(r.Context(), from, to)
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidDate) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }

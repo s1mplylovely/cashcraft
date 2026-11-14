@@ -29,7 +29,7 @@ func doRequest(t *testing.T, router http.Handler, method, path, body string) *ht
 	return rec
 }
 
-// достает поле "error" из тела ответа формата {"error":"..."}.
+// достает поле "error" из тела ответа формата {"error":"..."}
 func decodeError(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 
@@ -42,12 +42,24 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) string {
 
 const contentTypeJSON = "application/json; charset=utf-8"
 
+// подключает инфраструктуру и очищает таблицы перед интеграционным
+// тестом; если PostgreSQL недоступен, тест пропускается
+func requireDB(t *testing.T) {
+	t.Helper()
+	if err := domain.ConnectInfra(); err != nil {
+		t.Skipf("пропуск: PostgreSQL недоступен (%v)", err)
+	}
+	if err := domain.Reset(); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	t.Cleanup(func() { _ = domain.Reset() })
+}
+
 // Интеграционные тесты для POST/GET /api/budgets:
 // используют общее глобальное состояние ledger, поэтому не параллельно,
 // состояние изолируем через domain.Reset()
 func TestAPI_Budgets(t *testing.T) {
-	domain.Reset()
-	t.Cleanup(domain.Reset)
+	requireDB(t)
 
 	router := NewRouter()
 
@@ -98,8 +110,7 @@ func TestAPI_Budgets(t *testing.T) {
 // Интеграционные тесты для POST/GET /api/transactions:
 // успешная цепочка (201 -> 200), превышение бюджета (409) и некорректный JSON (400)
 func TestAPI_Transactions(t *testing.T) {
-	domain.Reset()
-	t.Cleanup(domain.Reset)
+	requireDB(t)
 
 	router := NewRouter()
 
@@ -157,5 +168,34 @@ func TestAPI_Transactions(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
 		assert.Equal(t, contentTypeJSON, rec.Header().Get("Content-Type"))
 		assert.True(t, strings.HasPrefix(decodeError(t, rec), "некорректный JSON"))
+	})
+
+	t.Run("report_summary", func(t *testing.T) {
+		// В БД одна успешная транзакция: "еда" на 1500.50
+		// Два одинаковых запроса подряд - второй может прийти из кеша Redis
+		var first domain.ReportSummary
+		for i := 0; i < 2; i++ {
+			rec := doRequest(t, router, http.MethodGet,
+				"/api/reports/summary?from=2026-09-01&to=2026-09-30", "")
+			assert.Equal(t, http.StatusOK, rec.Code)
+			assert.Equal(t, contentTypeJSON, rec.Header().Get("Content-Type"))
+
+			var summary domain.ReportSummary
+			assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &summary))
+			if i == 0 {
+				first = summary
+			} else {
+				assert.Equal(t, first, summary) // одинаковый результат при повторе
+			}
+		}
+		assert.Equal(t, 1500.50, first.Total)
+		assert.Len(t, first.Items, 1)
+		assert.Equal(t, "еда", first.Items[0].Category)
+	})
+
+	t.Run("report_bad_date", func(t *testing.T) {
+		rec := doRequest(t, router, http.MethodGet, "/api/reports/summary?from=2026-09-01&to=baddate", "")
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Equal(t, contentTypeJSON, rec.Header().Get("Content-Type"))
 	})
 }

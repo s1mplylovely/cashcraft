@@ -11,37 +11,37 @@ func TestTransaction_Validate(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name    string
-		tx      Transaction
+		name string
+		tx Transaction
 		wantErr error // nil - ожидается успех
 	}{
 		{
 			name: "валидная транзакция",
-			tx:   Transaction{Amount: 1500.50, Category: "еда", Description: "Пятёрочка", Date: "2026-09-19"},
+			tx: Transaction{Amount: 1500.50, Category: "еда", Description: "Пятёрочка", Date: "2026-09-19"},
 		},
 		{
-			name:    "нулевая сумма",
-			tx:      Transaction{Amount: 0, Category: "еда", Date: "2026-09-19"},
+			name: "нулевая сумма",
+			tx: Transaction{Amount: 0, Category: "еда", Date: "2026-09-19"},
 			wantErr: ErrZeroAmount,
 		},
 		{
-			name:    "отрицательная сумма",
-			tx:      Transaction{Amount: -100, Category: "еда", Date: "2026-09-19"},
+			name: "отрицательная сумма",
+			tx: Transaction{Amount: -100, Category: "еда", Date: "2026-09-19"},
 			wantErr: ErrNegativeAmount,
 		},
 		{
-			name:    "пустая категория",
-			tx:      Transaction{Amount: 100, Category: "", Date: "2026-09-19"},
+			name: "пустая категория",
+			tx: Transaction{Amount: 100, Category: "", Date: "2026-09-19"},
 			wantErr: ErrEmptyCategory,
 		},
 		{
-			name:    "некорректный формат даты",
-			tx:      Transaction{Amount: 100, Category: "еда", Date: "27.09.2026"},
+			name: "некорректный формат даты",
+			tx: Transaction{Amount: 100, Category: "еда", Date: "27.09.2026"},
 			wantErr: ErrInvalidDate,
 		},
 		{
-			name:    "пустая дата",
-			tx:      Transaction{Amount: 100, Category: "еда", Date: ""},
+			name: "пустая дата",
+			tx: Transaction{Amount: 100, Category: "еда", Date: ""},
 			wantErr: ErrInvalidDate,
 		},
 	}
@@ -66,31 +66,31 @@ func TestBudget_Validate(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name    string
-		b       Budget
+		name string
+		b Budget
 		wantErr error
 	}{
 		{
 			name: "валидный бюджет",
-			b:    Budget{Category: "еда", Limit: 5000, Period: "месяц"},
+			b: Budget{Category: "еда", Limit: 5000, Period: "месяц"},
 		},
 		{
 			name: "положительный лимит без периода",
-			b:    Budget{Category: "еда", Limit: 1},
+			b: Budget{Category: "еда", Limit: 1},
 		},
 		{
-			name:    "пустая категория",
-			b:       Budget{Category: "", Limit: 5000, Period: "месяц"},
+			name: "пустая категория",
+			b: Budget{Category: "", Limit: 5000, Period: "месяц"},
 			wantErr: ErrEmptyCategory,
 		},
 		{
-			name:    "нулевой лимит",
-			b:       Budget{Category: "еда", Limit: 0, Period: "месяц"},
+			name: "нулевой лимит",
+			b: Budget{Category: "еда", Limit: 0, Period: "месяц"},
 			wantErr: ErrNotPositiveLimit,
 		},
 		{
-			name:    "отрицательный лимит",
-			b:       Budget{Category: "еда", Limit: -100, Period: "месяц"},
+			name: "отрицательный лимит",
+			b: Budget{Category: "еда", Limit: -100, Period: "месяц"},
 			wantErr: ErrNotPositiveLimit,
 		},
 	}
@@ -110,34 +110,55 @@ func TestBudget_Validate(t *testing.T) {
 	}
 }
 
+// подключает инфраструктуру и очищает таблицы перед интеграционным
+// тестом; если PostgreSQL недоступен, тест пропускается.
+func requireDB(t *testing.T) {
+	t.Helper()
+	if err := ConnectInfra(); err != nil {
+		t.Skipf("пропуск: PostgreSQL недоступен (%v)", err)
+	}
+	if err := Reset(); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	t.Cleanup(func() { _ = Reset() })
+}
+
+// хелпер: читает транзакции, проваливая тест при ошибке
+func listTransactions(t *testing.T) []Transaction {
+	t.Helper()
+	list, err := ListTransactions()
+	assert.NoError(t, err)
+	return list
+}
+
 // проверка бизнес-правил бюджета
 // тест работает с общим глобальным состоянием пакета, поэтому не параллельный
 func TestAddTransaction_BudgetRules(t *testing.T) {
-	Reset()
-	t.Cleanup(Reset)
+	requireDB(t)
 
+	// Бюджет категории "еда": 5000 за месяц.
 	if err := SetBudget(Budget{Category: "еда", Limit: 5000, Period: "месяц"}); err != nil {
 		t.Fatalf("подготовка бюджета: %v", err)
 	}
 
 	t.Run("в пределах лимита", func(t *testing.T) {
-		assert.NoError(t, AddTransaction(Transaction{Amount: 1500.50, Category: "еда", Date: "2026-09-19"}))
-		assert.NoError(t, AddTransaction(Transaction{Amount: 1000, Category: "еда", Date: "2026-09-20"}))
-		assert.Len(t, ListTransactions(), 2)
+		assert.NoError(t, AddTransaction(&Transaction{Amount: 1500.50, Category: "еда", Date: "2026-09-19"}))
+		assert.NoError(t, AddTransaction(&Transaction{Amount: 1000, Category: "еда", Date: "2026-09-20"}))
+		assert.Len(t, listTransactions(t), 2)
 	})
 
 	t.Run("превышение лимита", func(t *testing.T) {
 		// текущая сумма по "еда" = 2500.50; +4000 = 6500.50 > 5000
-		err := AddTransaction(Transaction{Amount: 4000, Category: "еда", Date: "2026-09-21"})
+		err := AddTransaction(&Transaction{Amount: 4000, Category: "еда", Date: "2026-09-21"})
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrBudgetExceeded)
 
-		// после отказа количество транзакций не увеличилось
-		assert.Len(t, ListTransactions(), 2)
+		// После отказа количество транзакций не увеличилось.
+		assert.Len(t, listTransactions(t), 2)
 	})
 
 	t.Run("категория без бюджета не ограничена", func(t *testing.T) {
-		assert.NoError(t, AddTransaction(Transaction{Amount: 100000, Category: "другое", Date: "2026-09-22"}))
-		assert.Len(t, ListTransactions(), 3)
+		assert.NoError(t, AddTransaction(&Transaction{Amount: 100000, Category: "другое", Date: "2026-09-22"}))
+		assert.Len(t, listTransactions(t), 3)
 	})
 }

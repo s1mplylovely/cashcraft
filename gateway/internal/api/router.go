@@ -8,6 +8,7 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("/ping", pingHandler)
 	mux.HandleFunc("/api/transactions", transactionsRoute)
 	mux.HandleFunc("/api/budgets", budgetsRoute)
+	mux.HandleFunc("/api/reports/summary", reportsSummaryRoute)
 
 	return LoggingMiddleware(mux)
 }
@@ -38,6 +39,15 @@ func budgetsRoute(w http.ResponseWriter, r *http.Request) {
 		listBudgets(w, r)
 	case http.MethodPost:
 		createBudget(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
+	}
+}
+
+func reportsSummaryRoute(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		reportSummary(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "недопустимый метод")
 	}
